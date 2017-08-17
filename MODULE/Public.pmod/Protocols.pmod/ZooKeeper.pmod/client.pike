@@ -18,6 +18,7 @@ protected Standards.URI connect_url;
 protected function(.client:void) connect_cb;
 protected function(.client,.Reason:void) disconnect_cb;
 
+protected mapping(string:array) watchers = ([]);
 //! ZK client
 
 //! create a client which will connect to an zookeeper server on the specified server and port.
@@ -105,19 +106,6 @@ variant void connect() {
    
    .ConnectRequest m = .ConnectRequest(xid, last_zxid, session_timeout, session_id, "\0"*16);
 
-  /*
-   if(username)
-   {
-       m->has_username = 1;
-	   m->username = username;
-	   if(password)
-	   {
-  	     m->has_password = 1;
-  	     m->password = password;
-	   }
-   }
- */
-   
    send_message(m);
 }
 
@@ -148,6 +136,54 @@ variant .Stat set_data(string path, string data, int|void version) {
 
 variant string set_data(string path, string data, int|void version, function watch_cb) {
 	return "";
+}
+
+variant boolean create_node(string path, string data, array(.ACL) acls, int|void flags, function cb) {
+  .CreateRequest message = .CreateRequest(path, data, acls, flags);
+  .Message reply = send_message_await_response(message, (int) timeout);
+}
+
+variant string create_node(string path, string data, array(.ACL) acls, int|void flags) {
+  .CreateRequest message = .CreateRequest(path, data, acls, flags);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return reply->path;
+}
+
+variant boolean exists(string path, boolean|void watch, function cb) {
+  .ExistsRequest message = .ExistsRequest(path, watch);
+  .Message reply = send_message_await_response(message, (int) timeout);
+}
+
+variant boolean exists(string path, boolean|void watch, function|void cb, mixed|void ... data) {
+  .ExistsRequest message = .ExistsRequest(path, watch);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  werror("reply: %O\n", reply->stat);
+  boolean exists = reply->stat?1:0;
+  if(exists)
+    register_watcher(path, cb, @data);
+  return exists;
+}
+
+variant boolean get_acl(string path, int|void version, function cb) {
+  .GetACLRequest message = .GetACLRequest(path);
+  .Message reply = send_message_await_response(message, (int) timeout);
+}
+
+variant array(.ACL) get_acl(string path) {
+  .GetACLRequest message = .GetACLRequest(path);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return reply->acls;
+}
+
+variant boolean delete(string path, int|void version) {
+  .DeleteRequest message = .DeleteRequest(path, version);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return true;
+}
+
+variant boolean delete(string path, int|void version, function cb) {
+  .DeleteRequest message = .DeleteRequest(path, version);
+  .Message reply = send_message_await_response(message, (int) timeout);
 }
 
 
@@ -182,6 +218,29 @@ protected void send_message_sync(.Message m) {
    ::send_message_sync(m);
    if(timeout_callout_id) remove_call_out(timeout_callout_id);
    timeout_callout_id = call_out(send_ping, (timeout > 1? timeout - 1: 0.5));
+}
+
+protected void register_watcher(string path, function cb, mixed ... data) {
+  if(!has_index(watchers, path))
+    watchers[path] = ({ ({cb, data}) });
+  else    
+    watchers[path] += ({ ({cb, data}) });
+}
+
+protected void process_event(.WatcherEvent event) {
+  if(!has_index(watchers, event->get_path())) return; // TODO we shouldn't have events without watchers, so probably should clean up.
+  
+  foreach(watchers[event->get_path()];; array cbd)
+    call_out(cbd[0], 0, event, @cbd[1]);
+}
+
+protected void process_error(Error.Generic err, void|.ReplyHeader header) {
+  DEBUG("got response error: %O header: %O\n", err, header);
+    int message_identifier = header->get_xid();
+  if(has_index(pending_responses, message_identifier)) {
+    object pending_response = pending_responses[message_identifier];
+    pending_response->received_exception(err);
+  } 
 }
 
 protected void process_message(.Message message, .ReplyHeader|void header) {

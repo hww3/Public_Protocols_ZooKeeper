@@ -5,6 +5,8 @@
 #define DEBUG(X ...)
 #endif /* ZK_DEBUG */
 
+inherit .serialization_utils;
+
 constant ZK_PORT = 2181;
 constant ZKS_PORT = 2181;
 
@@ -22,6 +24,7 @@ constant CHILD_EVENT = 4;
 constant WATCH_XID = -1;
 constant PING_XID = -2;
 constant AUTH_XID = -4;
+
 
 constant NO_NODE_ERROR = -101;
 
@@ -65,16 +68,26 @@ void set_ssl_context(SSL.Context context) {
   ssl_context = context;
 }
 
+protected void process_event(.WatcherEvent event);
+
+protected void process_error(Error.Generic err, void|.ReplyHeader header);
+
 protected void process_message(.Message message, void|.ReplyHeader header);
 
 void send_message(.Message m) {
    string msg;
-   if(connection_state == CONNECTING && object_program(m) == .ConnectRequest) {
-     msg = m->encode(); 
-	 xid;
+   if(connection_state == CONNECTING){
+     if(object_program(m) == .ConnectRequest) {
+       msg = m->encode(); 
+       xid++;
+     }
+     else {
+       throw(Error.Generic("Not connected.\n"));
+    }
    }
-   else
+   else {
      msg = sprintf("%4c%4c%s", xid,  m->MESSAGE_ID, m->encode());
+	  }
 	  
    DEBUG("Adding outbound message to queue: %O, type %d => %O\n", m, m->MESSAGE_ID, msg);
    outbuf->add_hstring(msg, 4);
@@ -87,13 +100,17 @@ protected void send_message_sync(.Message m) {
 
 	string msg;
 	
-   if(connection_state == CONNECTING && object_program(m) == .ConnectRequest) {
-      msg = m->encode();
-	  xid++; 
+   if(connection_state == CONNECTING) {
+      if(object_program(m) == .ConnectRequest) {
+        msg = m->encode();
+	      xid++; 
+      } else {
+        throw(Error.Generic("Not connected.\n"));
+      }
     }
-    else
+    else {
       msg = sprintf("%4c%4c%s", xid, m->MESSAGE_ID, m->encode());
-   
+   }
    DEBUG("Sending outbound message synchronously: %O => %O\n", m, msg);
    conn->set_blocking_keep_callbacks();
    conn->write(sprintf("%4c%s", sizeof(msg), msg));
@@ -106,16 +123,18 @@ protected .Message send_message_await_response(.Message m, int timeout) {
 
   if(!message_identifier) throw(Error.Generic("No message identifier (xid) specified. Cannot receive a response.\n"));
   int attempts = 0;
+    mixed err;
 
   register_pending(message_identifier, m);
   do {
     send_message(m);
-    r = await_response(message_identifier, timeout);
-    if(r) break;
+    err = catch(r = await_response(message_identifier, timeout));
+    if(r || err) break;
   }  while(0); // (attempts++ < max_retries);
 
   unregister_pending(message_identifier);
 
+  if(err) throw(err);
   return r;
 }
 
@@ -128,23 +147,36 @@ protected .Message await_response(int message_identifier, int timeout) {
   
   DEBUG("await_response %d\n", message_identifier);
 
-  if((m = pending_responses[message_identifier])  && m->message)
-    return m->message;
-
+  if((m = pending_responses[message_identifier])) {
+    DEBUG("await_response %O have PendingResponse\n", m);
+    if(m->message)
+      return m->message;
+    else if(m->error) throw(m->error);
+  }
 // TODO
 // there is a theoretical race condition here
 // or at least a possible performance gap that could occur if a
 // client is waiting and the lock is held while messages are not 
 // delivered. we should 
+
+DEBUG("await_response: response is pending.");
+
   while(f > 0.0) {
     
     object key = await_mutex->trylock();
 
     if(!key) {
       key = await_mutex->lock();
-      if((m = pending_responses[message_identifier]) && m->message) { 
+       if((m = pending_responses[message_identifier])) {
+      DEBUG("await_response %O have PendingResponse\n", m);
+      if(m->message) {
         key = 0;
         return m->message;
+       }
+      else if(m->error) {
+        key = 0;
+        throw(m->error);
+      }
       }
     }
 
@@ -154,26 +186,27 @@ protected .Message await_response(int message_identifier, int timeout) {
     conn->set_backend(await_backend);
     f = f - await_backend(f);
     key = 0;
-    if((m = pending_responses[message_identifier]) && m->message) 
+    if((m = pending_responses[message_identifier]) && (m->error || m->message))
       break;
   }
 
   conn->set_backend(orig);
+  if(m && m->error) throw(m->error);
   return m?m->message:m; // timeout
 }
 
 protected void async_await_response(int message_identifier, .Message message, int response_timeout, 
-    int max_retries, function success, function failure, mixed data) {
-    register_pending(message_identifier, message, response_timeout, max_retries, success, failure, data);
+    function success, function failure, mixed data) {
+    register_pending(message_identifier, message, response_timeout, success, failure, data);
 }
 
 protected variant void register_pending(int message_identifier, .Message message) {
-  .PendingResponse pr = .PendingResponse(this, message_identifier, message, 0, 0);
+  .PendingResponse pr = .PendingResponse(this, message_identifier, message, 0);
   pending_responses[message_identifier] = pr;
 }
 
-protected variant void register_pending(int message_identifier, .Message message,  int timeout, int max_retries, function success, function failure, mixed data) {
-  .PendingResponse pr = .PendingResponse(this, message_identifier, message, timeout, max_retries);
+protected variant void register_pending(int message_identifier, .Message message,  int timeout, function success, function failure, mixed data) {
+  .PendingResponse pr = .PendingResponse(this, message_identifier, message, timeout);
   if(data) pr->data = data;
   if(success) pr->success = success;
   if(failure) pr->failure = failure;
@@ -258,6 +291,8 @@ protected void read_cb(mixed id, object data) {
 			case WATCH_XID:
 			DEBUG("HAVE WATCH\n");
 			// TODO handle watch notice
+			.WatcherEvent event = .WatcherEvent(body);
+			process_event(event);
 			break;
 			default:
 			handled = 0;
@@ -276,10 +311,16 @@ protected void read_cb(mixed id, object data) {
 			}
 
 			xid ++;
-			int exists_error = header->err == NO_NODE_ERROR && last_request->MESSAGE_ID == .ExistsRequest->MESSAGE_ID;
-			werror("exists_error: %O, err: %O\n", exists_error, header->err);
-			if(header->err && ! exists_error) {
-				throw(Error.Generic("ZK Error: " + header->err + "\n"));
+			int err = header->get_err();
+			
+			int exists_error = err == NO_NODE_ERROR && last_request->MESSAGE_ID == .ExistsRequest->MESSAGE_ID;
+		
+			if(err && ! exists_error) {
+			DEBUG(sprintf("got error but still have a body %O\n", body));
+			  program ep = .errors_by_code[err];
+			  if(!ep) ep = .Errors.ZooKeeperError;
+				process_error(ep(header->get_xid(), header->get_zxid()), header);
+				handled = 1;
 			}
 		}	
 	}
@@ -288,9 +329,9 @@ protected void read_cb(mixed id, object data) {
 	    string s = (string) body;// body->read_hstring(4);
 	    body = Stdio.Buffer(s);
 	    DEBUG("deserializing %O message: %d bytes: %O\n", last_request->response_program, sizeof(s), s);
-	    .Message message = last_request->response_program(body);
-	
-		process_message(message, header);
+	    .Message message;
+	    message = last_request->response_program(body);
+  		process_message(message, header);
 	}    
 	
   if(sizeof(buf)) {

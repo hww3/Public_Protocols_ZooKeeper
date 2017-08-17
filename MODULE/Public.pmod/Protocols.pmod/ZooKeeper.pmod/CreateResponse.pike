@@ -1,8 +1,7 @@
 inherit .Message;
 
-.Stat stat;
+string path;
 
 protected variant void create(Stdio.Buffer buf) {
-    if(sizeof(buf))
-        stat = .Stat(buf);
+    path = read_string(buf);
  }
