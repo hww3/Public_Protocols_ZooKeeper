@@ -8,17 +8,28 @@ inherit .protocol;
 
 protected string host;
 protected int port;
+protected float timeout;
+
 //protected string username;
 //protected string password;
 
 protected Standards.URI connect_url;
 
+protected function(.client:void) connect_cb;
+protected function(.client,.Reason:void) disconnect_cb;
 
 //! ZK client
 
 //! create a client which will connect to an zookeeper server on the specified server and port.
 protected variant void create(string _host, int _port) {
    create("zk://" + _host + ":" + _port);
+}
+
+//!
+void set_timeout(int msec) {
+	::set_timeout(msec);
+	timeout = session_timeout / 1000.0;
+	DEBUG("timeout is " + timeout + " seconds.\n");
 }
 
 //! create a client 
@@ -40,7 +51,21 @@ protected variant void create(string _connect_url) {
 		else port = ZK_PORT;
 	}
 	
+	timeout = session_timeout / 1000.0;
+	DEBUG("timeout is " + timeout + " seconds.\n");
+	
 	backend = Pike.DefaultBackend;
+}
+
+//! specify a callback to be run when a client is disconnected.
+void set_disconnect_callback(function(.client,.Reason:void) cb) {
+	disconnect_cb = cb;
+}
+
+//! connect and specify a method to be called when the connection successfully completes.
+variant void connect(function(.client:void) _connect_cb) {
+	connect_cb = _connect_cb;
+	connect();
 }
 
 //! connect to the server.
@@ -96,7 +121,67 @@ variant void connect() {
    send_message(m);
 }
 
+variant string get_data(string path) {
+	.GetDataRequest message = .GetDataRequest(path, 0);
+	.Message reply = send_message_await_response(message, (int)timeout);
+	
+	return reply->data;
+}
 
-void process_message(.Message message) {
+variant string get_data(string path, function watch_cb) {
+	return "";
+}
+
+protected void send_ping() {
+	.PingRequest message = .PingRequest();
+	ping_timeout_callout_ids->put(call_out(ping_timeout, timeout));
+	send_message(message);
+}
+
+protected void handle_ping() {
+    DEBUG("Got PingResponse\n");
+    if(sizeof(ping_timeout_callout_ids)) {
+      DEBUG("removing ping timeout callout\n");
+      remove_call_out(ping_timeout_callout_ids->get());
+    }
+}
+
+protected void ping_timeout() {
+  // no ping response received before timeout.
+  DEBUG("No ping response received before timeout, disconnecting.\n");
+  disconnect();
+}
+
+//! method used internally by the ZK client
+protected void send_message(.Message m) {
+   ::send_message(m);
+   if(timeout_callout_id) remove_call_out(timeout_callout_id);
+   timeout_callout_id = call_out(send_ping, (timeout > 1? timeout - 1: 0.5));
+}
+
+protected void send_message_sync(.Message m) {
+   ::send_message_sync(m);
+   if(timeout_callout_id) remove_call_out(timeout_callout_id);
+   timeout_callout_id = call_out(send_ping, (timeout > 1? timeout - 1: 0.5));
+}
+
+protected void process_message(.Message message, .ReplyHeader|void header) {
   DEBUG("got response message: %O\n", message);
+  
+  if(object_program(message) == .ConnectResponse) {
+	  if(connection_state == CONNECTING) {
+	  	connection_state = CONNECTED;
+		if(connect_cb) call_out(connect_cb, 0, this);
+	}
+      else 
+	  	throw(Error.Generic("Got ConnectResponse but not in CONNECTING state.\n"));
+	
+		return;
+  }
+  
+  int message_identifier = header->get_xid();
+  if(has_index(pending_responses, message_identifier)) {
+    object pending_response = pending_responses[message_identifier];
+    pending_response->received_message(message);
+  } 
 }

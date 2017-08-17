@@ -10,6 +10,9 @@ protected void create(Stdio.Buffer buf) {
   err = read_int32(buf);
 }
 
+int get_xid() { return xid; }
+int get_zxid() { return zxid; }
+int get_err() { return err; }
 
 protected string _sprintf(int a, void | mapping b) {
   return sprintf("ReplyHeader(xid=%x, zxid=%x, err=%d)", 

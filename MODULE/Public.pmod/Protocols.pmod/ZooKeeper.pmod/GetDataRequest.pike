@@ -1,9 +1,9 @@
 inherit .Message;
 
-constant MESSAGE_TYPE = "EXISTS";
-constant MESSAGE_ID = 3;
+constant MESSAGE_TYPE = "GETDATA";
+constant MESSAGE_ID = 4;
 
-public program response_program = .ExistsResponse;
+public program response_program = .GetDataResponse;
 
 string path;
 boolean watch;
