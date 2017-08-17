@@ -12,7 +12,7 @@ int main() {
 
 public void has_connected(mixed ... args) {
   werror("has_connected(%O)\n", args);
-  werror("get_data: %O", p->get_data("/foo/bar"));
+  werror("set_data: %O", p->set_data("/foo/bar", "hww3"));
   call_out(quit, 2);
 }
 

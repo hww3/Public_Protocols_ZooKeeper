@@ -132,6 +132,25 @@ variant string get_data(string path, function watch_cb) {
 	return "";
 }
 
+mapping get_data_full(string path) {
+	.GetDataRequest message = .GetDataRequest(path, 0);
+	.Message reply = send_message_await_response(message, (int)timeout);
+	
+	return (["data": reply->data, "stat": reply->stat]);
+}
+
+variant .Stat set_data(string path, string data, int|void version) {
+	.SetDataRequest message = .SetDataRequest(path, data, version);
+	.Message reply = send_message_await_response(message, (int)timeout);
+	
+	return reply->stat;
+}
+
+variant string set_data(string path, string data, int|void version, function watch_cb) {
+	return "";
+}
+
+
 protected void send_ping() {
 	.PingRequest message = .PingRequest();
 	ping_timeout_callout_ids->put(call_out(ping_timeout, timeout));
