@@ -133,17 +133,15 @@ variant void connect() {
 	}
 }
 
-variant string get_data(string path) {
+//!
+string get_data(string path) {
 	.GetDataRequest message = .GetDataRequest(path, 0);
 	.Message reply = send_message_await_response(message, (int)timeout);
 	
 	return reply->data;
 }
 
-variant string get_data(string path, function watch_cb) {
-	return "";
-}
-
+//!
 mapping get_data_full(string path) {
 	.GetDataRequest message = .GetDataRequest(path, 0);
 	.Message reply = send_message_await_response(message, (int)timeout);
@@ -151,23 +149,16 @@ mapping get_data_full(string path) {
 	return (["data": reply->data, "stat": reply->stat]);
 }
 
-variant .Stat set_data(string path, string data, int|void version) {
+//!
+.Stat set_data(string path, string data, int|void version) {
 	.SetDataRequest message = .SetDataRequest(path, data, version);
 	.Message reply = send_message_await_response(message, (int)timeout);
 	
 	return reply->stat;
 }
 
-variant string set_data(string path, string data, int|void version, function watch_cb) {
-	return "";
-}
-
-variant boolean create_node(string path, string data, array(.ACL) acls, int|void flags, function cb) {
-  .CreateRequest message = .CreateRequest(path, data, acls, flags);
-  .Message reply = send_message_await_response(message, (int) timeout);
-}
-
-variant string create_node(string path, string data, array(.ACL) acls, int|void flags) {
+//!
+string create_node(string path, string data, array(.ACL) acls, int|void flags) {
   .CreateRequest message = .CreateRequest(path, data, acls, flags);
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->path;
@@ -175,7 +166,7 @@ variant string create_node(string path, string data, array(.ACL) acls, int|void 
 
 //! @note
 //!   requires ZooKeeper 3.6 or newer
-variant string create_node_ttl(string path, string data, array(.ACL) acls, int|void flags, int ttl) {
+string create_node_ttl(string path, string data, array(.ACL) acls, int|void flags, int ttl) {
   .CreateRequest message = .CreateTTLRequest(path, data, acls, flags, ttl);
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->path;
@@ -187,14 +178,16 @@ boolean sync(string path) {
   return reply->path;
 }
 
-variant boolean exists(string path, boolean|void watch) {
+//!
+variant boolean exists(string path) {
   .ExistsRequest message = .ExistsRequest(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
   boolean exists = reply->stat?1:0;
   return exists;
 }
 
-variant boolean exists(string path, boolean|void watch, function|void cb, mixed|void ... data) {
+//!
+variant boolean exists(string path, boolean watch, function cb, mixed|void ... data) {
   .ExistsRequest message = .ExistsRequest(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
   //werror("reply: %O\n", reply->stat);
@@ -204,24 +197,28 @@ variant boolean exists(string path, boolean|void watch, function|void cb, mixed|
   return exists;
 }
 
+//!
 boolean set_acl(string path, array(.ACL) acls, int|void version) {
     .SetACLRequest message = .SetACLRequest(path, acls, version);
     .Message reply = send_message_await_response(message, (int) timeout);
     return true;
 }
 
+//!
 array(string) get_children(string path, boolean|void watch) {
   .GetChildrenRequest message = .GetChildrenRequest(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->children;
 }
 
+//!
 mapping get_children2(string path, boolean|void watch) {
   .GetChildren2Request message = .GetChildren2Request(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
   return (["children": reply->children, "stat": reply->stat]);
 }
 
+//!
 .Stat check_version(string path, int version) {
   .CheckVersionRequest message = .CheckVersionRequest(path, version);
   .Message reply;
@@ -232,26 +229,18 @@ else if(err) throw(err);
 else return reply->stat;
 }
 
-variant boolean get_acl(string path, int|void version, function cb) {
-  .GetACLRequest message = .GetACLRequest(path);
-  .Message reply = send_message_await_response(message, (int) timeout);
-}
-
-variant array(.ACL) get_acl(string path) {
+//!
+array(.ACL) get_acl(string path) {
   .GetACLRequest message = .GetACLRequest(path);
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->acls;
 }
 
-variant boolean delete(string path, int|void version) {
+//!
+boolean delete(string path, int|void version) {
   .DeleteRequest message = .DeleteRequest(path, version);
   .Message reply = send_message_await_response(message, (int) timeout);
   return true;
-}
-
-variant boolean delete(string path, int|void version, function cb) {
-  .DeleteRequest message = .DeleteRequest(path, version);
-  .Message reply = send_message_await_response(message, (int) timeout);
 }
 
 

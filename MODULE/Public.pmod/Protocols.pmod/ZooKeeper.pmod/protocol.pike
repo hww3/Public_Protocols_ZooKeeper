@@ -80,7 +80,7 @@ protected void process_error(Error.Generic err, void|.ReplyHeader header);
 
 protected void process_message(.Message message, void|.ReplyHeader header);
 
-void send_message(.Message m) {
+protected void send_message(.Message m) {
    string msg;
    if(connection_state == CONNECTING){
      if(object_program(m) == .ConnectRequest) {
@@ -144,7 +144,6 @@ protected .Message send_message_await_response(.Message m, int timeout) {
   if(err) throw(err);
   return r;
 }
-
 
 protected .Message await_response(int message_identifier, int timeout) {
   .Message m = 0;
@@ -221,7 +220,7 @@ protected variant void register_pending(int message_identifier, .Message message
   pending_responses[message_identifier] = pr;
 }
 
-void unregister_pending(int message_identifier) {
+protected void unregister_pending(int message_identifier) {
   if(has_index(pending_responses, message_identifier)) {
     DEBUG("clearing pending response marker for %d\n", message_identifier);
     m_delete(pending_responses, message_identifier);
@@ -240,6 +239,11 @@ protected void reset_connection(void|int _local, mixed|void backtrace) {
       remove_call_out(timeout_callout_id);
 }
 
+// this is the main processing loop for inbound data from the ZK server.
+// this is a streaming method designed for use in non-blocking/callback mode,
+// so if a client needs to operate in synchronous mode, the connection object
+// should be put into a standalone backend and run periodically, at least once
+// every session_timeout msec.
 protected void read_cb(mixed id, object data) {
   DEBUG("read_cb: %O %O\n", id, data);
   .ReplyHeader header;
@@ -392,7 +396,7 @@ protected void low_disconnect(int _local, mixed|void backtrace) {
   reset_frame_state();
 }
 
-void report_timeout(.PendingResponse response) {
+protected void report_timeout(.PendingResponse response) {
   DEBUG("A timed out waiting for response after %d attempts.\n", response->attempts);
 }
 
