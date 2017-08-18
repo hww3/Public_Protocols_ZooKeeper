@@ -49,6 +49,7 @@ protected mixed timeout_callout_id;
 
 Thread.Mutex await_mutex = Thread.Mutex();
 protected mapping(int:.Message) pending_responses = ([]);
+protected boolean sync_mode = 0;
 
 int last_zxid;
 int session_id;
@@ -57,6 +58,11 @@ int xid;
 
 //!
 int is_connected() { return connection_state == CONNECTED; }
+
+//!
+void set_synchronous(boolean sync) {
+	sync_mode = sync;
+}
 
 //!
 void set_timeout(int msec) {
@@ -113,6 +119,7 @@ protected void send_message_sync(.Message m) {
    }
    DEBUG("Sending outbound message synchronously: %O => %O\n", m, msg);
    conn->set_blocking_keep_callbacks();
+   last_request = m;
    conn->write(sprintf("%4c%s", sizeof(msg), msg));
    conn->set_nonblocking_keep_callbacks();
 }
@@ -264,16 +271,16 @@ protected void read_cb(mixed id, object data) {
 
     string s1 = (string) body;// body->read_hstring(4);
     body = Stdio.Buffer(s1);
-    DEBUG("deserializing header: %d bytes: %O\n", sizeof(s1), s1);
 
     int handled = 1;
 
 	if(connection_state == CONNECTING) {
+	    DEBUG("deserializing connection response: %d bytes: %O\n", sizeof(s1), s1);
 		handled = 0; // ConnectResponse is a special case, it has no ReplyHeader, but we do have a body.
 		xid++;
 	}
 	else if(connection_state == CONNECTED) {
-		// TODO we need to keep track of requests by id, as they may not return in strict order.
+	    DEBUG("deserializing header: %d bytes: %O\n", sizeof(s1), s1);
 	 	header = .ReplyHeader(body);
 		DEBUG("got replyheader: %O\n", header);
 		switch(header->get_xid()) {

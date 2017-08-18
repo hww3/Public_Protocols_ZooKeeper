@@ -106,7 +106,31 @@ variant void connect() {
    
    .ConnectRequest m = .ConnectRequest(xid, last_zxid, session_timeout, session_id, "\0"*16);
 
-   send_message(m);
+   if(sync_mode)
+     send_message_sync(m);
+   else
+     send_message(m);
+	 
+   if(sync_mode) {
+	   
+	   Pike.Backend orig;
+
+	   float f = (float)timeout;
+	   while(f > 0.0) {
+    	       
+	     if(!orig) orig = conn->query_backend();
+
+	     DEBUG("waiting %f seconds for message\n", f);
+	     conn->set_backend(await_backend);
+	     f = f - await_backend(f);
+		 
+	     if(connection_state == CONNECTED)
+	       break;
+	 } 
+  	 conn->set_backend(orig);
+  	if(connection_state != CONNECTED)
+	  throw(Error.Generic("Connection timeout\n"));
+	}
 }
 
 variant string get_data(string path) {
@@ -149,19 +173,63 @@ variant string create_node(string path, string data, array(.ACL) acls, int|void 
   return reply->path;
 }
 
-variant boolean exists(string path, boolean|void watch, function cb) {
+//! @note
+//!   requires ZooKeeper 3.6 or newer
+variant string create_node_ttl(string path, string data, array(.ACL) acls, int|void flags, int ttl) {
+  .CreateRequest message = .CreateTTLRequest(path, data, acls, flags, ttl);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return reply->path;
+}
+
+boolean sync(string path) {
+  .SyncRequest message = .SyncRequest(path);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return reply->path;
+}
+
+variant boolean exists(string path, boolean|void watch) {
   .ExistsRequest message = .ExistsRequest(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
+  boolean exists = reply->stat?1:0;
+  return exists;
 }
 
 variant boolean exists(string path, boolean|void watch, function|void cb, mixed|void ... data) {
   .ExistsRequest message = .ExistsRequest(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
-  werror("reply: %O\n", reply->stat);
+  //werror("reply: %O\n", reply->stat);
   boolean exists = reply->stat?1:0;
   if(exists)
     register_watcher(path, cb, @data);
   return exists;
+}
+
+boolean set_acl(string path, array(.ACL) acls, int|void version) {
+    .SetACLRequest message = .SetACLRequest(path, acls, version);
+    .Message reply = send_message_await_response(message, (int) timeout);
+    return true;
+}
+
+array(string) get_children(string path, boolean|void watch) {
+  .GetChildrenRequest message = .GetChildrenRequest(path, watch);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return reply->children;
+}
+
+mapping get_children2(string path, boolean|void watch) {
+  .GetChildren2Request message = .GetChildren2Request(path, watch);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  return (["children": reply->children, "stat": reply->stat]);
+}
+
+.Stat check_version(string path, int version) {
+  .CheckVersionRequest message = .CheckVersionRequest(path, version);
+  .Message reply;
+mixed err;
+err = catch(reply = send_message_await_response(message, (int) timeout));
+if(err && err->is_bad_version_error) return false;
+else if(err) throw(err);
+else return reply->stat;
 }
 
 variant boolean get_acl(string path, int|void version, function cb) {

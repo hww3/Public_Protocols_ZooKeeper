@@ -21,3 +21,12 @@ constant CREATED_EVENT = 1;
 constant DELETED_EVENT = 2;
 constant CHANGED_EVENT = 3;
 constant CHILD_EVENT = 4;
+
+// Shortcuts for common Ids
+final .Id ANYONE_ID_UNSAFE = .Id("world", "anyone");
+final .Id AUTH_IDS = .Id("auth", "");
+
+// Shortcuts for common ACLs
+final .ACL OPEN_ACL_UNSAFE = .ACL(PERMIT_ALL, ANYONE_ID_UNSAFE);
+final .ACL CREATOR_ALL_ACL = .ACL(PERMIT_ALL, AUTH_IDS);
+final .ACL READ_ACL_UNSAFE = .ACL(PERMIT_READ, ANYONE_ID_UNSAFE);
