@@ -16,16 +16,16 @@ protected variant void create(string _scheme, string _id) {
   id = _id;
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   scheme = read_string(buf);
   id = read_string(buf);
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, scheme);
   encode_string(buf, id);
-  return (string)buf;
+  return buf;
 }
 
 protected string _sprintf(int a, void | mapping b) {

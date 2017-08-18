@@ -3,7 +3,7 @@ inherit .Message;
 constant MESSAGE_TYPE = "GETACL";
 constant MESSAGE_ID = 6;
 
-public program response_program = .GetACLResponse;
+constant response_program = .GetACLResponse;
 
 string path;
 
@@ -11,8 +11,8 @@ protected void create(string _path) {
   path = _path;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, path);
-  return (string)buf;
+  return buf;
 }

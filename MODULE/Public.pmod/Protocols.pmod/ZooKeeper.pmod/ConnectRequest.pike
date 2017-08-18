@@ -1,6 +1,6 @@
 inherit .Message;
 
-public program response_program = .ConnectResponse;
+constant response_program = .ConnectResponse;
 
 int protocol_version;
 int last_zxid_seen;
@@ -18,7 +18,7 @@ protected void create(int _protocol_version, int _last_zxid_seen, int _timeout, 
   readonly = _readonly;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_int32(buf, protocol_version);
   encode_int64(buf, last_zxid_seen);
@@ -27,5 +27,5 @@ string encode() {
   encode_buffer(buf, passwd);
   encode_byte(buf, readonly);
 
-  return (string)buf;
+  return buf;
 }

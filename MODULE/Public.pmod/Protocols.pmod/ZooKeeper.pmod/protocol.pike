@@ -81,7 +81,7 @@ protected void process_error(Error.Generic err, void|.ReplyHeader header);
 protected void process_message(.Message message, void|.ReplyHeader header);
 
 protected void send_message(.Message m) {
-   string msg;
+   string|Stdio.Buffer msg;
    if(connection_state == CONNECTING){
      if(object_program(m) == .ConnectRequest) {
        msg = m->encode(); 
@@ -104,7 +104,7 @@ protected void send_message(.Message m) {
 
 protected void send_message_sync(.Message m) {
 
-	string msg;
+	string|Stdio.Buffer msg;
 	
    if(connection_state == CONNECTING) {
       if(object_program(m) == .ConnectRequest) {
@@ -302,7 +302,7 @@ protected void read_cb(mixed id, object data) {
 			case WATCH_XID:
 			DEBUG("HAVE WATCH\n");
 			// TODO handle watch notice
-			.WatcherEvent event = .WatcherEvent(body);
+			.WatcherEvent event = .WatcherEvent(body, header);
 			process_event(event);
 			break;
 			default:
@@ -341,7 +341,8 @@ protected void read_cb(mixed id, object data) {
 	    body = Stdio.Buffer(s);
 	    DEBUG("deserializing %O message: %d bytes: %O\n", last_request->response_program, sizeof(s), s);
 	    .Message message;
-	    message = last_request->response_program(body);
+	    program rp = last_request->response_program;
+	    message = rp(body, header);
   		process_message(message, header);
 	}    
 	

@@ -19,6 +19,19 @@ int main() {
     werror("exception occurred: %O\n", err);
 	p->set_acl("/foo/bar/gazonk3", ({Public.Protocols.ZooKeeper.OPEN_ACL_UNSAFE}));
     }
+    
+    p->start_transaction();
+    
+    int t =  time();
+    for(int i = 0; i < 3; i++) {
+      //p->add_create_node("/foo/bar/tx" + t + i, "whee" + i, ({Public.Protocols.ZooKeeper.OPEN_ACL_UNSAFE}));
+      //p->add_set_data("/foo/bar/tx" + t + i, "lalala" + i);
+      p->add_check_version("/foo/bar/tx" + t + i, -1);
+    }
+    
+    mixed res = p->commit_transaction();
+    werror("tx res: %O\n", res);
+    
   //else p->delete("/foo/bar/gazonk3");
   //werror("version? %O\n", p->check_version("/foo/bar/gazonk3", -1));
  // werror("create: %O", p->create_node_ttl("/foo/bar/gazonk4", "whee", ({acl}), 0, 15000));

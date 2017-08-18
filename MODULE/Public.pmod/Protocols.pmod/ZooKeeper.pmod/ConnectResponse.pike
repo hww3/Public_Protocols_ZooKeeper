@@ -6,7 +6,8 @@ inherit .Message;
   string passwd;
   boolean readonly;
   
-protected variant void create(Stdio.Buffer buf) {
+  // connect reponses aren't preceeded by a reply header.
+protected variant void create(Stdio.Buffer buf, int|.ReplyHeader reply_header) {
   protocol_version = read_int32(buf);
   time_out = read_int32(buf);
   session_id = read_int64(buf);

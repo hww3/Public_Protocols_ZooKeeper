@@ -6,4 +6,4 @@ constant  MESSAGE_ID = 11;
 protected void create() {
 }
 
-string encode() { return ""; }
+string|Stdio.Buffer encode() { return ""; }

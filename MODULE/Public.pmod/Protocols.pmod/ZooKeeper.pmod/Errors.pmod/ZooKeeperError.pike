@@ -15,3 +15,7 @@ protected variant void create(int xid, int zxid) {
 
   ::create(nice_error_name + ": xid=" + xid + ", zxid=" + zxid + "\n", bt);
 }
+
+mixed return_results() {
+  return this;
+}

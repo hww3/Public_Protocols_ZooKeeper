@@ -3,7 +3,7 @@ inherit .Message;
 constant MESSAGE_TYPE = "EXISTS";
 constant MESSAGE_ID = 3;
 
-public program response_program = .ExistsResponse;
+constant response_program = .ExistsResponse;
 
 string path;
 boolean watch;
@@ -13,9 +13,9 @@ protected void create(string _path, boolean _watch) {
   watch = _watch;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, path);
   encode_byte(buf, watch);
-  return (string)buf;
+  return buf;
 }

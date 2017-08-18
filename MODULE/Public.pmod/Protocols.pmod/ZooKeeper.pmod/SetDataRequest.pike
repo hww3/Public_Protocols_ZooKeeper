@@ -3,7 +3,7 @@ inherit .Message;
 constant MESSAGE_TYPE = "SETDATA";
 constant MESSAGE_ID = 5;
 
-public program response_program = .SetDataResponse;
+constant response_program = .SetDataResponse;
 
 string path;
 string data;
@@ -15,10 +15,10 @@ protected void create(string _path, string _data, int _version) {
   version = _version;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, path);
   encode_buffer(buf, data);
   encode_int32(buf, version);
-  return (string)buf;
+  return buf;
 }

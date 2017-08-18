@@ -15,8 +15,8 @@ protected variant void create() {
  throw(Error.Generic("Creation not allowed\n"));
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
 }
 
-public string encode() {
+public string|Stdio.Buffer encode() {
 }

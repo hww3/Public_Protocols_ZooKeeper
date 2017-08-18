@@ -3,7 +3,7 @@ inherit .Message;
 constant MESSAGE_TYPE = "CREATETTL";
 constant MESSAGE_ID = 15;
 
-public program response_program = .CreateResponse;
+constant response_program = .CreateResponse;
 
 string path;
 string data;
@@ -19,7 +19,7 @@ protected void create(string _path, string _data, array(.ACL) _acls, int _flags,
   ttl = _ttl;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, path);
   encode_string(buf, data);
@@ -29,5 +29,5 @@ string encode() {
   encode_int32(buf, flags);
   encode_int32(buf, ttl);
 
-  return (string)buf;
+  return buf;
 }

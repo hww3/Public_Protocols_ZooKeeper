@@ -6,6 +6,8 @@ inherit .protocol;
 #define DEBUG(X ...)
 #endif /* ZK_DEBUG */
 
+#define REQUIRE_TX() { do { if(!current_transaction) throw(Error.Generic("Not in a transaction!\n")); } while(0); }
+
 protected string host;
 protected int port;
 protected float timeout;
@@ -17,6 +19,8 @@ protected Standards.URI connect_url;
 
 protected function(.client:void) connect_cb;
 protected function(.client,.Reason:void) disconnect_cb;
+
+protected ADT.List current_transaction;
 
 protected mapping(string:array) watchers = ([]);
 //! ZK client
@@ -151,18 +155,61 @@ mapping get_data_full(string path) {
 
 //!
 .Stat set_data(string path, string data, int|void version) {
-	.SetDataRequest message = .SetDataRequest(path, data, version);
+	.SetDataRequest message = make_set_data_request(path, data, version);
 	.Message reply = send_message_await_response(message, (int)timeout);
 	
 	return reply->stat;
 }
 
+.SetDataRequest make_set_data_request(string path, string data, int|void version) {
+  return .SetDataRequest(path, data, version);
+}
 //!
 string create_node(string path, string data, array(.ACL) acls, int|void flags) {
-  .CreateRequest message = .CreateRequest(path, data, acls, flags);
+  .CreateRequest message = make_create_request(path, data, acls, flags);
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->path;
 }
+
+protected .CreateRequest make_create_request(string path, string data, array(.ACL) acls, int|void flags) {
+  return .CreateRequest(path, data, acls, flags);
+}
+
+void add_create_node(string path, string data, array(.ACL) acls, int|void flags) {
+  REQUIRE_TX();
+  current_transaction->append(make_create_request(path, data, acls, flags));
+}
+
+void add_delete(string path, int|void version) {
+  REQUIRE_TX();
+  current_transaction->append(make_delete_request(path, version));
+}
+
+void add_set_data(string path, string data, int|void version) {
+  REQUIRE_TX();
+  current_transaction->append(make_set_data_request(path, data, version));
+}
+
+void add_check_version(string path, int version) {
+  REQUIRE_TX();
+  current_transaction->append(make_check_version_request(path, version));
+}
+
+
+void start_transaction() {
+  if(current_transaction) throw(Error.Generic("Already in a transaction!\n"));
+  current_transaction = ADT.List();
+}
+
+array commit_transaction() {
+  REQUIRE_TX();
+  .TransactionRequest message = .TransactionRequest(current_transaction);
+  .Message reply = send_message_await_response(message, (int) timeout);
+  werror("reply: %O\n", reply);
+  current_transaction = 0;
+  return reply->return_results();
+}
+
 
 //! @note
 //!   requires ZooKeeper 3.6 or newer
@@ -180,7 +227,7 @@ boolean sync(string path) {
 
 //!
 variant boolean exists(string path) {
-  .ExistsRequest message = .ExistsRequest(path, watch);
+  .ExistsRequest message = make_exists_request(path, 0);
   .Message reply = send_message_await_response(message, (int) timeout);
   boolean exists = reply->stat?1:0;
   return exists;
@@ -188,13 +235,17 @@ variant boolean exists(string path) {
 
 //!
 variant boolean exists(string path, boolean watch, function cb, mixed|void ... data) {
-  .ExistsRequest message = .ExistsRequest(path, watch);
+  .ExistsRequest message = make_exists_request(path, watch);
   .Message reply = send_message_await_response(message, (int) timeout);
   //werror("reply: %O\n", reply->stat);
   boolean exists = reply->stat?1:0;
   if(exists)
     register_watcher(path, cb, @data);
   return exists;
+}
+
+protected .ExistsRequest make_exists_request(string path, boolean watch) {
+  return .ExistsRequest(path, watch);
 }
 
 //!
@@ -220,7 +271,7 @@ mapping get_children2(string path, boolean|void watch) {
 
 //!
 .Stat check_version(string path, int version) {
-  .CheckVersionRequest message = .CheckVersionRequest(path, version);
+  .CheckVersionRequest message = make_check_version_request(path, version);
   .Message reply;
 mixed err;
 err = catch(reply = send_message_await_response(message, (int) timeout));
@@ -229,6 +280,9 @@ else if(err) throw(err);
 else return reply->stat;
 }
 
+protected .CheckVersionRequest make_check_version_request(string path, int version) {
+  return .CheckVersionRequest(path, version);
+}
 //!
 array(.ACL) get_acl(string path) {
   .GetACLRequest message = .GetACLRequest(path);
@@ -238,9 +292,13 @@ array(.ACL) get_acl(string path) {
 
 //!
 boolean delete(string path, int|void version) {
-  .DeleteRequest message = .DeleteRequest(path, version);
+  .DeleteRequest message = make_delete_request(path, version);
   .Message reply = send_message_await_response(message, (int) timeout);
   return true;
+}
+
+.DeleteRequest make_delete_request(string path, int|void version) {
+  return .DeleteRequest(path, version);
 }
 
 

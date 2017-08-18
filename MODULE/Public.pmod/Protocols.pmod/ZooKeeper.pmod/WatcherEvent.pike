@@ -16,7 +16,7 @@ int get_type() {
   return type;
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   type = read_int32(buf);
   state = read_int32(buf);
   path = read_string(buf);

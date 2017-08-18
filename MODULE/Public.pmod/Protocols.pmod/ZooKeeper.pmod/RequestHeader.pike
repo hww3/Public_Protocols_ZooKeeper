@@ -8,7 +8,7 @@ protected variant void create(int _xid, int _type) {
   type = _type;
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   xid = read_int32(buf);
   type = read_int32(buf);
 }

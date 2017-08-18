@@ -1,4 +1,5 @@
 mapping(int:program(Public.Protocols.ZooKeeper.Errors.ZooKeeperError)) errors_by_code = ([]);
+mapping(int:program(Public.Protocols.ZooKeeper.Message)) messages_by_type = ([]);
 
 protected void create() {
 
@@ -7,7 +8,15 @@ protected void create() {
       errors_by_code[prog->zookeeper_error_code] = prog;
    }
    
+   foreach(mkmapping(indices(Public.Protocols.ZooKeeper), values(Public.Protocols.ZooKeeper)); mixed k; mixed prog) {
+     if(programp(prog)) {
+       if(has_index(prog, "MESSAGE_ID") && prog->MESSAGE_ID >0) 
+         messages_by_type[prog->MESSAGE_ID] = prog;
+     }
+   }
 //   werror("errors_by_code: %O\n", errors_by_code);
+//   werror("messages_by_type: %O\n", messages_by_type);
+   
 }
 
 constant PERMIT_READ = 1;

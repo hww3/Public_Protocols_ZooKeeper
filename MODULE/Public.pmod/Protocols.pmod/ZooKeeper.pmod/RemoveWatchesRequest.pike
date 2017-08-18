@@ -3,7 +3,7 @@ inherit .Message;
 constant MESSAGE_TYPE = "CHECKWATCHES";
 constant MESSAGE_ID = 3;
 
-public program response_program = .ExistsResponse;
+constant response_program = .ExistsResponse;
 
 string path;
 int type;
@@ -13,9 +13,9 @@ protected void create(string _path, int _type) {
   type = _type;
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_string(buf, path);
   encode_int32(buf, type);
-  return (string)buf;
+  return buf;
 }

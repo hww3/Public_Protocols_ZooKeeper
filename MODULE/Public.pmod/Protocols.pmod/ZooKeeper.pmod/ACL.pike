@@ -16,9 +16,9 @@ protected variant void create(int _perms, .Id _id) {
   id = _id;
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   perms = read_int32(buf);
-  id = .Id(buf);
+  id = .Id(buf, reply_header);
 }
 
 protected string _sprintf(int a, void | mapping b) {
@@ -26,9 +26,9 @@ protected string _sprintf(int a, void | mapping b) {
                   perms, id);
 }
 
-string encode() {
+string|Stdio.Buffer encode() {
   Stdio.Buffer buf = Stdio.Buffer();
   encode_int32(buf, perms);
   buf->add(id->encode());
-  return (string)buf;
+  return buf;
 }

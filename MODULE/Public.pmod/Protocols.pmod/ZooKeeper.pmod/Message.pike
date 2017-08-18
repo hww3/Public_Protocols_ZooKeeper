@@ -9,13 +9,14 @@ constant  MESSAGE_ID = 0;
 #define DEBUG(X ...)
 #endif /* ZK_DEBUG */
 
-public program response_program;
+//constant response_program = 0;
 
 protected variant void create() { throw(Error.Generic("Creation not allowed\n")); }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   throw(Error.Generic("Creation from buffer not allowed\n"));
 }
 
-public string encode() {
-}
+public string|Stdio.Buffer encode() { }
+
+public mixed return_results() { return 0; }

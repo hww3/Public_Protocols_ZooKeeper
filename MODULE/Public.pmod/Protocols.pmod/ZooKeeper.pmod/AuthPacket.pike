@@ -10,7 +10,7 @@ protected variant void create(int _type, string _scheme, string _auth) {
   auth = _auth;
 }
 
-protected variant void create(Stdio.Buffer buf) {
+protected variant void create(Stdio.Buffer buf, .ReplyHeader reply_header) {
   type = read_int32(buf);
   scheme = read_string(buf);
   auth = read_buffer(buf);
