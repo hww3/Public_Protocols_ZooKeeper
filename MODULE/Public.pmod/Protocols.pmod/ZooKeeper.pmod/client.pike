@@ -8,10 +8,13 @@ inherit .protocol;
 
 #define REQUIRE_TX() { do { if(!current_transaction) throw(Error.Generic("Not in a transaction!\n")); } while(0); }
 
+array(Standards.URI) urls;
+array(Standards.URI) connect_urls;
 protected string host;
 protected int port;
 protected float timeout;
-
+protected int read_only;
+protected int attempts_since_success;
 //protected string username;
 //protected string password;
 
@@ -26,8 +29,8 @@ protected mapping(string:array) watchers = ([]);
 //! ZK client
 
 //! create a client which will connect to an zookeeper server on the specified server and port.
-protected variant void create(string _host, int _port) {
-   create("zk://" + _host + ":" + _port);
+protected variant void create(string _host, int _port, int|void _read_only) {
+   create("zk://" + _host + ":" + _port, _read_only);
 }
 
 //!
@@ -42,25 +45,30 @@ void set_timeout(int msec) {
 //! @param _connect_url
 //!   A url in the form of  @tt{zk://[user[:password]@@][hostname][:port]@} or  @tt{zks://[user[:password]@@][hostname][:port]@}
 //!
-protected variant void create(string _connect_url) {
+protected variant void create(string _connect_url, int|void _read_only) {
+    create(({_connect_url}), _read_only);
+}
+
+protected variant void create(array(string) _connect_urls, int|void _read_only) {
+	if(!sizeof(_connect_urls)) throw(Error.Generic("At least one ZK url must be provided.\n"));
+	
+	array u = allocate(sizeof(_connect_urls));
+	foreach(_connect_urls; int i; mixed _connect_url) {
     connect_url = Standards.URI(_connect_url);
-	if(!(<"zk", "zks">)[connect_url->scheme]) throw(Error.Generic("Connect url must be of type zk or zks.\n"));
-	
-	host = connect_url->host;
-	port = connect_url->port;
-//	username = connect_url->user;
-//	password = connect_url->password;
-	
-	if(!port) {
-		if(connect_url->scheme == "zks") port = ZKS_PORT;
-		else port = ZK_PORT;
+      if(!(<"zk", "zks">)[connect_url->scheme]) throw(Error.Generic("Connect url[" + i + "] must be of type zk or zks.\n"));
+	  u[i] = connect_url;
 	}
 	
+	urls = u;
+	connect_urls = Array.shuffle(urls);
+	
+	read_only = _read_only;
 	timeout = session_timeout / 1000.0;
 	DEBUG("timeout is " + timeout + " seconds.\n");
 	
 	backend = Pike.DefaultBackend;
 }
+
 
 //! specify a callback to be run when a client is disconnected.
 void set_disconnect_callback(function(.client,.Reason:void) cb) {
@@ -81,21 +89,45 @@ variant void connect() {
    if(connection_state != NOT_CONNECTED) throw(Error.Generic("Connection already in progress.\n"));
 	
    connection_state = CONNECTING;
+
+   Standards.URI connect_url = connect_urls[0];
+	host = connect_url->host;
+	port = connect_url->port;
+//	username = connect_url->user;
+//	password = connect_url->password;
+	
+	if(!port) {
+		if(connect_url->scheme == "zks") port = ZKS_PORT;
+		else port = ZK_PORT;
+	}	
    
    conn = Stdio.File();
    conn->set_blocking();
    DEBUG("connecting to %s, %d.\n", host, port);
    if(!conn->connect(host, port))  {
      connection_state = NOT_CONNECTED;
-     throw(Error.Generic("Unable to connect to ZK server.\n"));
+     report_error(Error.Generic("Unable to connect to ZK server " + host + ":" + port + ".\n"));
+	 attempts_since_success++;
+	 if(!was_connected && attempts_since_success >= sizeof(urls)) { // we have no more left to try
+		attempts_since_success = 0;
+		throw(Error.Generic("Unable to connect to any specified ZK server.\n"));
+      }
+  	  else reconnect();
    }
 
    if(connect_url->scheme == "zks") {
 	   DEBUG("Starting SSL/TLS\n");
        conn = SSL.File(conn, ssl_context || SSL.Context());
 	   conn->set_blocking();
-	   if(!conn->connect(host))
-	     throw(Error.Generic("Unable to start TLS session with ZK server.\n"));
+	   if(!conn->connect(host)) {
+  	     report_error(Error.Generic("Unable to start TLS session with ZK server " + host + ":" + port + ".\n"));
+		attempts_since_success++;
+		if(!was_connected && attempts_since_success == sizeof(urls)) { // we have no more left to try
+			attempts_since_success = 0;
+			throw(Error.Generic("Connection timeout\n"));
+		}
+		else reconnect();
+	 }
 	   //conn->write("");
    }
 
@@ -132,8 +164,49 @@ variant void connect() {
 	       break;
 	 } 
   	 conn->set_backend(orig);
-  	if(connection_state != CONNECTED)
-	  throw(Error.Generic("Connection timeout\n"));
+  	 if(connection_state != CONNECTED) {
+			attempts_since_success++;
+			if(!was_connected && attempts_since_success == sizeof(urls)) // we have no more left to try
+			{
+				// we're in synchronous mode, so no need to keep a backoff period
+				attempts_since_success = 0;
+				throw(Error.Generic("Connection timeout\n"));
+			}
+			else reconnect();
+  		}
+	}
+}
+
+protected float calculate_backoff(int attempts_since_success) {
+	int passes = attempts_since_success / sizeof(urls); // how many times have we been through the list?
+	int at_start = attempts_since_success % sizeof(urls); 
+
+	random_seed(time());
+
+    if(at_start) 	
+		return random(2.0) + 5*passes;
+	else return random(1.0);
+}
+
+void reconnect() {	
+	low_disconnect(1);
+	
+	if(sizeof(connect_urls) == 1) {
+		connect_url = connect_urls[0];
+		connect_urls = Array.shuffle(urls);
+	} else {
+		[connect_url, connect_urls] = Array.shift(connect_urls);
+	}
+
+    float sleepytime = calculate_backoff(attempts_since_success);
+
+	DEBUG("reconnecting in " + sleepytime + " seconds.\n");
+	
+	if(sync_mode) {
+	  sleep(sleepytime);
+	  connect();	
+    } else {
+	  call_out(connect, sleepytime);
 	}
 }
 
@@ -318,8 +391,8 @@ protected void handle_ping() {
 
 protected void ping_timeout() {
   // no ping response received before timeout.
-  DEBUG("No ping response received before timeout, disconnecting.\n");
-  disconnect();
+  DEBUG("No ping response received before timeout, reconnecting.\n");
+  reconnect();
 }
 
 //! method used internally by the ZK client
@@ -363,7 +436,14 @@ protected void process_message(.Message message, .ReplyHeader|void header) {
   
   if(object_program(message) == .ConnectResponse) {
 	  if(connection_state == CONNECTING) {
+		  if(message->read_only && !read_only) {
+			  attempts_since_success++;
+			  DEBUG("need a r/w server, so reconnecting");
+			  reconnect();
+		  } 
+	    attempts_since_success = 0;
 	  	connection_state = CONNECTED;
+		was_connected = 1;
 		if(connect_cb) call_out(connect_cb, 0, this);
 	}
       else 

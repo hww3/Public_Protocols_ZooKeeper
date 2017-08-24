@@ -2,7 +2,7 @@ object p;
 
 int main() {
 
-  p = Public.Protocols.ZooKeeper.client("zk://localhost");
+  p = Public.Protocols.ZooKeeper.client(({"zk://localhost"}));
  p->set_synchronous(true); 
  p->connect();
   

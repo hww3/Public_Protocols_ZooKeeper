@@ -43,6 +43,7 @@ protected int packet_started = 0;
 protected int have_length = 0;
 protected int current_length;
 protected int connection_state;
+protected int was_connected;
 
 protected ADT.Queue ping_timeout_callout_ids = ADT.Queue();
 protected mixed timeout_callout_id;
@@ -384,15 +385,18 @@ protected void close_cb(mixed id) {
 //!
 void disconnect() {
   //check_connected();
+  was_connected = 0;
   low_disconnect(1);
 }
 
 protected void low_disconnect(int _local, mixed|void backtrace) {
-	DEBUG("low_disconnect()\n");
-  if(conn->is_open()) {
-	  send_message_await_response(.CloseRequest(), 5);
-    conn->close();
-  }
+  DEBUG("low_disconnect()\n");
+  if(connection_state == CONNECTED || connection_state == CONNECTING) {
+    if(conn->is_open()) {
+      send_message_await_response(.CloseRequest(), 5);
+      conn->close();
+    }
+  }  
   reset_connection(_local, backtrace);
   reset_frame_state();
 }
