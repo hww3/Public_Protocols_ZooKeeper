@@ -457,7 +457,7 @@ protected void process_event(.WatcherEvent event) {
   mapping w = watchers[path];
   
   foreach(w; array cbd;) {
-    m_delete(w, cbd);
+    m_delete(w, cbd); // a watch is a one time deal.
     call_out(cbd[0], 0, event, @cbd[1]);
   }
 }
