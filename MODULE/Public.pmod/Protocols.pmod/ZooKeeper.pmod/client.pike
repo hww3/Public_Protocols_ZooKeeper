@@ -24,8 +24,7 @@ protected function(.client:void) connect_cb;
 protected function(.client,.Reason:void) disconnect_cb;
 
 protected ADT.List current_transaction;
-
-protected mapping(string:array) watchers = ([]);
+protected mapping(string:mapping) watchers = ([]);
 //! ZK client
 
 //! create a client which will connect to an zookeeper server on the specified server and port.
@@ -75,6 +74,11 @@ void set_disconnect_callback(function(.client,.Reason:void) cb) {
 	disconnect_cb = cb;
 }
 
+protected void low_disconnect(int _local, mixed|void backtrace) {
+  pending_responses = ([]);
+  ::low_disconnect(_local, backtrace);
+}
+
 //! connect and specify a method to be called when the connection successfully completes.
 variant void connect(function(.client:void) _connect_cb) {
 	connect_cb = _connect_cb;
@@ -107,12 +111,12 @@ variant void connect() {
    if(!conn->connect(host, port))  {
      connection_state = NOT_CONNECTED;
      report_error(Error.Generic("Unable to connect to ZK server " + host + ":" + port + ".\n"));
-	 attempts_since_success++;
-	 if(!was_connected && attempts_since_success >= sizeof(urls)) { // we have no more left to try
-		attempts_since_success = 0;
-		throw(Error.Generic("Unable to connect to any specified ZK server.\n"));
-      }
-  	  else reconnect();
+	   attempts_since_success++;
+	   if(!was_connected && attempts_since_success >= sizeof(urls)) { // we have no more left to try
+		   attempts_since_success = 0;
+		   throw(Error.Generic("Unable to connect to any specified ZK server.\n"));
+     }
+  	 else { reconnect(); return; }
    }
 
    if(connect_url->scheme == "zks") {
@@ -126,7 +130,7 @@ variant void connect() {
 			attempts_since_success = 0;
 			throw(Error.Generic("Connection timeout\n"));
 		}
-		else reconnect();
+  	 else { reconnect(); return; }
 	 }
 	   //conn->write("");
    }
@@ -172,18 +176,28 @@ variant void connect() {
 				attempts_since_success = 0;
 				throw(Error.Generic("Connection timeout\n"));
 			}
-			else reconnect();
+   	  else { reconnect(); return; }
+
   		}
 	}
 }
 
+protected void close_cb(mixed id) {
+  ::close_cb(id);
+  if(disconnect_cb) call_out(disconnect_cb, 0, this);
+  else if(auto_reconnect) call_out(reconnect, 0, 1);
+}
+
 protected float calculate_backoff(int attempts_since_success) {
 	int passes = attempts_since_success / sizeof(urls); // how many times have we been through the list?
-	int at_start = attempts_since_success % sizeof(urls); 
+	int at_start = !(attempts_since_success % sizeof(urls)); 
 
+  werror("passes: %O, urls: %O, at_start: %O\n", passes, sizeof(urls), at_start);
 	random_seed(time());
 
-    if(at_start) 	
+  if(!passes) return 0.0; // first time through, go quickly.
+
+  if(at_start) 	
 		return random(2.0) + 5*passes;
 	else return random(1.0);
 }
@@ -211,10 +225,12 @@ void reconnect() {
 }
 
 //!
-string get_data(string path) {
-	.GetDataRequest message = .GetDataRequest(path, 0);
+string get_data(string path, boolean|void watch, function cb, mixed|void ... data) {
+	.GetDataRequest message = .GetDataRequest(path, watch);
+  if(watch)
+    register_watcher(path, cb, @data);
+
 	.Message reply = send_message_await_response(message, (int)timeout);
-	
 	return reply->data;
 }
 
@@ -309,11 +325,13 @@ variant boolean exists(string path) {
 //!
 variant boolean exists(string path, boolean watch, function cb, mixed|void ... data) {
   .ExistsRequest message = make_exists_request(path, watch);
+  if(watch)
+    register_watcher(path, cb, @data);
+    
   .Message reply = send_message_await_response(message, (int) timeout);
   //werror("reply: %O\n", reply->stat);
   boolean exists = reply->stat?1:0;
-  if(exists)
-    register_watcher(path, cb, @data);
+
   return exists;
 }
 
@@ -329,15 +347,23 @@ boolean set_acl(string path, array(.ACL) acls, int|void version) {
 }
 
 //!
-array(string) get_children(string path, boolean|void watch) {
+array(string) get_children(string path, boolean|void watch, function|void cb, mixed|void ... data) {
   .GetChildrenRequest message = .GetChildrenRequest(path, watch);
+
+  if(watch)
+    register_watcher(path, cb, @data);
+    
   .Message reply = send_message_await_response(message, (int) timeout);
   return reply->children;
 }
 
 //!
-mapping get_children2(string path, boolean|void watch) {
+mapping get_children2(string path, boolean|void watch, function|void cb, mixed|void ... data) {
   .GetChildren2Request message = .GetChildren2Request(path, watch);
+  
+  if(watch)
+    register_watcher(path, cb, @data);
+    
   .Message reply = send_message_await_response(message, (int) timeout);
   return (["children": reply->children, "stat": reply->stat]);
 }
@@ -410,25 +436,55 @@ protected void send_message_sync(.Message m) {
 
 protected void register_watcher(string path, function cb, mixed ... data) {
   if(!has_index(watchers, path))
-    watchers[path] = ({ ({cb, data}) });
+    watchers[path] = ([ ({cb, data}) :1 ]);
   else    
-    watchers[path] += ({ ({cb, data}) });
+    watchers[path][({cb, data})] = 1;
+}
+
+variant void clear_watchers(string path) {
+  m_delete(watchers, path);
+}
+
+variant void clear_watchers() {
+  watchers = ([]);
 }
 
 protected void process_event(.WatcherEvent event) {
-  if(!has_index(watchers, event->get_path())) return; // TODO we shouldn't have events without watchers, so probably should clean up.
+  string path = event->get_path();
   
-  foreach(watchers[event->get_path()];; array cbd)
+  if(!has_index(watchers, path)) return; // TODO we shouldn't have events without watchers, so probably should clean up.
+  
+  mapping w = watchers[path];
+  
+  foreach(w; array cbd;) {
+    m_delete(w, cbd);
     call_out(cbd[0], 0, event, @cbd[1]);
+  }
 }
 
 protected void process_error(Error.Generic err, void|.ReplyHeader header) {
   DEBUG("got response error: %O header: %O\n", err, header);
     int message_identifier = header->get_xid();
-  if(has_index(pending_responses, message_identifier)) {
-    object pending_response = pending_responses[message_identifier];
-    pending_response->received_exception(err);
-  } 
+    object pending_response;
+    if(has_index(pending_responses, message_identifier)) {
+      pending_response = pending_responses[message_identifier];
+    }
+
+    if(err->is_session_expired_error) {
+      // what to do here?
+      call_out(session_timeout_received, 0, pending_response);
+      if(disconnect_cb)
+        call_out(disconnect_cb, 0, this);
+      low_disconnect(0);
+    }
+
+    if(pending_response)
+      pending_response->received_exception(err);
+    else report_error(err); // really shouldn't get here.
+}
+
+protected void session_timeout_received(object pending_response) {
+  reconnect();
 }
 
 protected void process_message(.Message message, .ReplyHeader|void header) {
@@ -443,11 +499,11 @@ protected void process_message(.Message message, .ReplyHeader|void header) {
 		  } 
 	    attempts_since_success = 0;
 	  	connection_state = CONNECTED;
-		was_connected = 1;
-		if(connect_cb) call_out(connect_cb, 0, this);
+  		was_connected = 1;
+	  	if(connect_cb) call_out(connect_cb, 0, this);
 	}
-      else 
-	  	throw(Error.Generic("Got ConnectResponse but not in CONNECTING state.\n"));
+  else 
+  	throw(Error.Generic("Got ConnectResponse but not in CONNECTING state.\n"));
 	
 		return;
   }

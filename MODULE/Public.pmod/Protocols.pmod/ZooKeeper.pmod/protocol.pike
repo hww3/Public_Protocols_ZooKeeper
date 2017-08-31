@@ -44,6 +44,7 @@ protected int have_length = 0;
 protected int current_length;
 protected int connection_state;
 protected int was_connected;
+protected int auto_reconnect = 1;
 
 protected ADT.Queue ping_timeout_callout_ids = ADT.Queue();
 protected mixed timeout_callout_id;
@@ -238,6 +239,11 @@ protected void reset_connection(void|int _local, mixed|void backtrace) {
     connection_state = NOT_CONNECTED;
     if(timeout_callout_id)
       remove_call_out(timeout_callout_id);
+      
+   foreach(pending_responses; int key; object pending_response) {
+     m_delete(pending_responses, key);
+     destruct(pending_response);
+   }
 }
 
 // this is the main processing loop for inbound data from the ZK server.
@@ -411,10 +417,5 @@ protected void report_error(mixed error) {
 
 protected void destroy() {
 	low_disconnect(1);
-	
-  foreach(pending_responses; int key; object pending_response) {
-    m_delete(pending_responses, key);
-    destruct(pending_response);
-  }
 }
 

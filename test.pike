@@ -2,7 +2,7 @@ object p;
 
 int main() {
 
-  p = Public.Protocols.ZooKeeper.client("zk://localhost");
+  p = Public.Protocols.ZooKeeper.client(({"zk://localhost", "zk://localhost:1234"}));
   p->connect(has_connected);
   werror("Client: %O\n", p);
  return -1;
