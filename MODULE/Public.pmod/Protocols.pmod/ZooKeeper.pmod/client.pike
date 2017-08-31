@@ -15,8 +15,8 @@ protected int port;
 protected float timeout;
 protected int read_only;
 protected int attempts_since_success;
-//protected string username;
-//protected string password;
+protected string auth_scheme;
+protected string auth_credentials;
 
 protected Standards.URI connect_url;
 
@@ -83,6 +83,18 @@ protected void low_disconnect(int _local, mixed|void backtrace) {
 variant void connect(function(.client:void) _connect_cb) {
 	connect_cb = _connect_cb;
 	connect();
+}
+
+//! sets the auth data for use during connect
+void set_auth(string scheme, string credentials) {
+  auth_scheme = scheme;
+  auth_credentials = credentials;
+  
+  if(connection_state != NOT_CONNECTED)
+  {
+    	.Message reply = send_message_await_response(make_auth_request(auth_scheme, auth_credentials), (int)timeout);
+    	DEBUG("got reply: %O\n", reply);
+  }
 }
 
 //! connect to the server.
@@ -253,6 +265,12 @@ mapping get_data_full(string path) {
 .SetDataRequest make_set_data_request(string path, string data, int|void version) {
   return .SetDataRequest(path, data, version);
 }
+
+.AuthPacket make_auth_request(string scheme, string credentials) {
+werror("making auth request.\n");
+  return .AuthPacket(0, scheme, credentials);
+}
+
 //!
 string create_node(string path, string data, array(.ACL) acls, int|void flags) {
   .CreateRequest message = make_create_request(path, data, acls, flags);
@@ -500,7 +518,10 @@ protected void process_message(.Message message, .ReplyHeader|void header) {
 	    attempts_since_success = 0;
 	  	connection_state = CONNECTED;
   		was_connected = 1;
+	  	if(auth_scheme) {
+	  	   send_message(make_auth_request(auth_scheme, auth_credentials));
 	  	if(connect_cb) call_out(connect_cb, 0, this);
+	  	}
 	}
   else 
   	throw(Error.Generic("Got ConnectResponse but not in CONNECTING state.\n"));
