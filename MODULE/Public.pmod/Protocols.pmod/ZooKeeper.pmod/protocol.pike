@@ -44,6 +44,7 @@ protected int have_length = 0;
 protected int current_length;
 protected int connection_state;
 protected int was_connected;
+protected int auto_reconnect = 1;
 
 protected ADT.Queue ping_timeout_callout_ids = ADT.Queue();
 protected mixed timeout_callout_id;
@@ -83,17 +84,23 @@ protected void process_message(.Message message, void|.ReplyHeader header);
 
 protected void send_message(.Message m) {
    string|Stdio.Buffer msg;
+   int _xid;
+   
    if(connection_state == CONNECTING){
      if(object_program(m) == .ConnectRequest) {
        msg = m->encode(); 
-       xid++;
-     }
+       _xid = xid = ((xid % 2147483647) + 1);
+     } 
      else {
        throw(Error.Generic("Not connected.\n"));
     }
    }
    else {
-     msg = sprintf("%4c%4c%s", xid,  m->MESSAGE_ID, m->encode());
+       if(object_program(m) == .AuthPacket)
+         _xid = AUTH_XID;
+       else _xid = xid;
+       
+     msg = sprintf("%4c%4c%s", _xid,  m->MESSAGE_ID, m->encode());
 	  }
 	  
    DEBUG("Adding outbound message to queue: %O, type %d => %O\n", m, m->MESSAGE_ID, msg);
@@ -110,7 +117,7 @@ protected void send_message_sync(.Message m) {
    if(connection_state == CONNECTING) {
       if(object_program(m) == .ConnectRequest) {
         msg = m->encode();
-	      xid++; 
+	      xid = (xid % 2147483647) + 1; 
       } else {
         throw(Error.Generic("Not connected.\n"));
       }
@@ -238,6 +245,11 @@ protected void reset_connection(void|int _local, mixed|void backtrace) {
     connection_state = NOT_CONNECTED;
     if(timeout_callout_id)
       remove_call_out(timeout_callout_id);
+      
+   foreach(pending_responses; int key; object pending_response) {
+     m_delete(pending_responses, key);
+     destruct(pending_response);
+   }
 }
 
 // this is the main processing loop for inbound data from the ZK server.
@@ -282,7 +294,7 @@ protected void read_cb(mixed id, object data) {
 	if(connection_state == CONNECTING) {
 	    DEBUG("deserializing connection response: %d bytes: %O\n", sizeof(s1), s1);
 		handled = 0; // ConnectResponse is a special case, it has no ReplyHeader, but we do have a body.
-		xid++;
+		xid =  (xid % 2147483647) + 1;
 	}
 	else if(connection_state == CONNECTED) {
 	    DEBUG("deserializing header: %d bytes: %O\n", sizeof(s1), s1);
@@ -294,6 +306,7 @@ protected void read_cb(mixed id, object data) {
 			handle_ping();
 			break;
 			case AUTH_XID:
+						werror("HAVE AUTH\n");
 			DEBUG("HAVE AUTH\n");
 			// TODO resolve auth request
 			if(header->get_err()) {
@@ -411,10 +424,5 @@ protected void report_error(mixed error) {
 
 protected void destroy() {
 	low_disconnect(1);
-	
-  foreach(pending_responses; int key; object pending_response) {
-    m_delete(pending_responses, key);
-    destruct(pending_response);
-  }
 }
 

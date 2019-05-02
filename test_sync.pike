@@ -2,7 +2,7 @@ object p;
 
 int main() {
 
-  p = Public.Protocols.ZooKeeper.client(({"zk://localhost"}));
+  p = Public.Protocols.ZooKeeper.client(({"zk://localhost", "zk://localhost:1425", "zk://localhost:1423"}));
  p->set_synchronous(true); 
  p->connect();
   
@@ -38,8 +38,8 @@ int main() {
   
   werror("children: %O", p->get_children2("/foo/bar"));
 //  if(err = catch(werror("set_data: %O", p->set_data("/foo/bar", "hww3"))))
-p->disconnect();
-return 0;
+//p->disconnect();
+return -1;
 }
 
 void watch_cb(object event, string f) {
